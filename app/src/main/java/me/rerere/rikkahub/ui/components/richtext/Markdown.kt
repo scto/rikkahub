@@ -1,6 +1,19 @@
 package me.rerere.rikkahub.ui.components.richtext
 
 import android.content.Intent
+import android.graphics.Typeface
+import android.graphics.drawable.Drawable
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.method.LinkMovementMethod
+import android.text.style.BackgroundColorSpan
+import android.text.style.ClickableSpan
+import android.text.style.ImageSpan
+import android.text.style.StrikethroughSpan
+import android.text.style.StyleSpan
+import android.text.style.TypefaceSpan
+import android.text.style.URLSpan
+import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,47 +25,40 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.text.InlineTextContent
-import androidx.compose.foundation.text.appendInlineContent
+
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateMapOf
+
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.Placeholder
-import androidx.compose.ui.text.PlaceholderVerticalAlign
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withLink
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastForEach
 import androidx.core.net.toUri
 import me.rerere.rikkahub.ui.components.table.ColumnDefinition
 import me.rerere.rikkahub.ui.components.table.ColumnWidth
 import me.rerere.rikkahub.ui.components.table.DataTable
+import me.rerere.rikkahub.ui.components.ui.ViewText
 import me.rerere.rikkahub.utils.unescapeHtml
 import org.intellij.markdown.IElementType
 import org.intellij.markdown.MarkdownElementTypes
@@ -634,12 +640,9 @@ private fun Paragraph(
   }
 
   val colorScheme = MaterialTheme.colorScheme
-  val inlineContents = remember {
-    mutableStateMapOf<String, InlineTextContent>()
-  }
-
-  val textStyle = LocalTextStyle.current
+  val textStyle = LocalTextStyle.current.merge(color = LocalContentColor.current)
   val density = LocalDensity.current
+
   FlowRow(
     modifier = modifier
       .then(
@@ -649,27 +652,26 @@ private fun Paragraph(
         else Modifier
       )
   ) {
-    val annotatedString = remember(content) {
-      buildAnnotatedString {
-        node.children.fastForEach { child ->
-          appendMarkdownNodeContent(
-            node = child,
-            content = content,
-            inlineContents = inlineContents,
-            colorScheme = colorScheme,
-            onClickCitation = onClickCitation,
-            style = textStyle,
-            density = density
-          )
-        }
+    val spannableString = remember(content) {
+      val builder = SpannableStringBuilder()
+      node.children.fastForEach { child ->
+        appendMarkdownNodeContent(
+          node = child,
+          content = content,
+          builder = builder,
+          colorScheme = colorScheme,
+          onClickCitation = onClickCitation,
+          style = textStyle,
+          density = density
+        )
       }
+      builder
     }
-    Text(
-      text = annotatedString,
+    
+    ViewText(
+      text = spannableString,
       modifier = Modifier,
-      inlineContent = inlineContents,
-      softWrap = true,
-      overflow = TextOverflow.Visible,
+      style = textStyle
     )
   }
 }
@@ -727,10 +729,10 @@ private fun TableNode(node: ASTNode, content: String, modifier: Modifier = Modif
   )
 }
 
-private fun AnnotatedString.Builder.appendMarkdownNodeContent(
+private fun appendMarkdownNodeContent(
   node: ASTNode,
   content: String,
-  inlineContents: MutableMap<String, InlineTextContent>,
+  builder: SpannableStringBuilder,
   colorScheme: ColorScheme,
   density: Density,
   style: TextStyle,
@@ -738,60 +740,84 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
 ) {
   when {
     node is LeafASTNode -> {
-      append(node.getTextInNode(content).unescapeHtml())
+      builder.append(node.getTextInNode(content).unescapeHtml())
     }
 
     node.type == MarkdownElementTypes.EMPH -> {
-      withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-        node.children
-          .trim(MarkdownTokenTypes.EMPH, 1)
-          .fastForEach {
-            appendMarkdownNodeContent(
-              node = it,
-              content = content,
-              inlineContents = inlineContents,
-              colorScheme = colorScheme,
-              density = density,
-              style = style,
-              onClickCitation = onClickCitation
-            )
-          }
+      val start = builder.length
+      node.children
+        .trim(MarkdownTokenTypes.EMPH, 1)
+        .fastForEach {
+          appendMarkdownNodeContent(
+            node = it,
+            content = content,
+            builder = builder,
+            colorScheme = colorScheme,
+            density = density,
+            style = style,
+            onClickCitation = onClickCitation
+          )
+        }
+      val end = builder.length
+      if (end > start) {
+        builder.setSpan(
+          StyleSpan(Typeface.ITALIC),
+          start,
+          end,
+          Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
       }
     }
 
     node.type == MarkdownElementTypes.STRONG -> {
-      withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-        node.children
-          .trim(MarkdownTokenTypes.EMPH, 2)
-          .fastForEach {
-            appendMarkdownNodeContent(
-              node = it,
-              content = content,
-              inlineContents = inlineContents,
-              colorScheme = colorScheme,
-              density = density,
-              style = style,
-              onClickCitation = onClickCitation
-            )
-          }
+      val start = builder.length
+      node.children
+        .trim(MarkdownTokenTypes.EMPH, 2)
+        .fastForEach {
+          appendMarkdownNodeContent(
+            node = it,
+            content = content,
+            builder = builder,
+            colorScheme = colorScheme,
+            density = density,
+            style = style,
+            onClickCitation = onClickCitation
+          )
+        }
+      val end = builder.length
+      if (end > start) {
+        builder.setSpan(
+          StyleSpan(Typeface.BOLD),
+          start,
+          end,
+          Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
       }
     }
 
     node.type == GFMElementTypes.STRIKETHROUGH -> {
-      withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) {
-        node.children
-          .trim(GFMTokenTypes.TILDE, 2)
-          .fastForEach {
-            appendMarkdownNodeContent(
-              node = it,
-              content = content,
-              inlineContents = inlineContents,
-              colorScheme = colorScheme,
-              density = density,
-              style = style,
-              onClickCitation = onClickCitation
-            )
-          }
+      val start = builder.length
+      node.children
+        .trim(GFMTokenTypes.TILDE, 2)
+        .fastForEach {
+          appendMarkdownNodeContent(
+            node = it,
+            content = content,
+            builder = builder,
+            colorScheme = colorScheme,
+            density = density,
+            style = style,
+            onClickCitation = onClickCitation
+          )
+        }
+      val end = builder.length
+      if (end > start) {
+        builder.setSpan(
+          StrikethroughSpan(),
+          start,
+          end,
+          Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
       }
     }
 
@@ -801,94 +827,91 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
           ?: ""
       val linkText =
         node.findChildOfType(MarkdownTokenTypes.TEXT)?.getTextInNode(content) ?: linkDest
+      
       if (linkText == "citation") {
-        // 如果是引用，则特殊处理
-        inlineContents.putIfAbsent(
-          "citation:$linkDest", InlineTextContent(
-            placeholder = Placeholder(
-              width = 1.em,
-              height = 1.em,
-              placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
-            ),
-            children = {
-              Box(
-                modifier = Modifier
-                    .clickable {
-                        onClickCitation(linkDest.toIntOrNull() ?: 1)
-                        println(linkDest)
-                    }
-                    .fillMaxSize()
-                    .background(colorScheme.primary.copy(0.2f)),
-                contentAlignment = Alignment.Center
-              ) {
-                Text(
-                  text = linkDest,
-                  modifier = Modifier.wrapContentSize(),
-                  style = TextStyle(
-                    fontSize = 12.sp,
-                    lineHeight = 12.sp,
-                    fontWeight = FontWeight.SemiBold
-                  ),
-                )
-              }
-            }
-          ))
-        appendInlineContent("citation:$linkDest")
-      } else {
-        withLink(LinkAnnotation.Url(linkDest)) {
-          withStyle(
-            SpanStyle(
-              color = colorScheme.primary,
-              textDecoration = TextDecoration.Underline
-            )
-          ) {
-            append(linkText)
+        // 处理引用
+        val start = builder.length
+        builder.append(linkDest)
+        val end = builder.length
+        
+        val citationSpan = object : ClickableSpan() {
+          override fun onClick(widget: View) {
+            onClickCitation(linkDest.toIntOrNull() ?: 1)
           }
         }
+        
+        builder.setSpan(
+          citationSpan,
+          start,
+          end,
+          Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+        builder.setSpan(
+          BackgroundColorSpan(colorScheme.primary.copy(0.2f).toArgb()),
+          start,
+          end,
+          Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+      } else {
+        val start = builder.length
+        builder.append(linkText)
+        val end = builder.length
+        
+        builder.setSpan(
+          URLSpan(linkDest),
+          start,
+          end,
+          Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
       }
     }
 
     node.type == MarkdownElementTypes.CODE_SPAN -> {
       val code = node.getTextInNode(content).trim('`')
-      withStyle(
-        SpanStyle(
-          fontFamily = FontFamily.Monospace,
-          fontSize = 0.95.em,
-          background = colorScheme.secondaryContainer.copy(alpha = 0.2f),
-        )
-      ) {
-        append(code)
-      }
+      val start = builder.length
+      builder.append(code)
+      val end = builder.length
+      
+      builder.setSpan(
+        TypefaceSpan("monospace"),
+        start,
+        end,
+        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+      )
+      builder.setSpan(
+        BackgroundColorSpan(colorScheme.secondaryContainer.copy(alpha = 0.2f).toArgb()),
+        start,
+        end,
+        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+      )
     }
 
     node.type == GFMElementTypes.INLINE_MATH -> {
-      // formula as id
       val formula = node.getTextInNode(content)
-      appendInlineContent(formula, "[Latex]")
-      val (width, height) = with(density) {
-        assumeLatexSize(
+      val drawable = with(density) {
+        getLatexDrawable(
           latex = formula,
-          fontSize = style.fontSize.toPx()
-        ).let {
-          it.width().toSp() to it.height().toSp()
-        }
-      }
-      inlineContents.putIfAbsent(
-        /* key = */ formula,
-        /* value = */ InlineTextContent(
-          placeholder = Placeholder(
-            width = width,
-            height = height,
-            placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter
-          ),
-          children = {
-            MathInline(
-              latex = formula,
-              modifier = Modifier
-            )
-          }
+          fontSize = style.fontSize.toPx(),
+          color = style.color.toArgb(),
+          background = android.graphics.Color.TRANSPARENT
         )
-      )
+      }
+      
+      if (drawable != null) {
+        val start = builder.length
+        builder.append(" ") // 占位符
+        val end = builder.length
+        
+        builder.setSpan(
+          ImageSpan(drawable, ImageSpan.ALIGN_BASELINE),
+          start,
+          end,
+          Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+      } else {
+        // 如果 LaTeX 渲染失败，回退到纯文本
+        builder.append(formula)
+      }
     }
 
     // 其他类型继续递归处理
@@ -897,7 +920,7 @@ private fun AnnotatedString.Builder.appendMarkdownNodeContent(
         appendMarkdownNodeContent(
           node = it,
           content = content,
-          inlineContents = inlineContents,
+          builder = builder,
           colorScheme = colorScheme,
           density = density,
           style = style,

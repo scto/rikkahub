@@ -12,8 +12,11 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -46,6 +49,9 @@ fun ViewText(
   style: TextStyle = LocalTextStyle.current,
 ) {
   val density = LocalDensity.current
+  val styleMerged = style.merge(
+    color = LocalContentColor.current
+  )
   AndroidView(
     factory = { context ->
       TextView(context).apply {
@@ -55,12 +61,13 @@ fun ViewText(
         )
         movementMethod = LinkMovementMethod.getInstance()
         setText(text)
-        setComposeTextStyle(density, style)
+        setComposeTextStyle(density, styleMerged)
       }
     },
-    modifier = modifier,
+    modifier = modifier.wrapContentHeight(),
     update = { view ->
-      view.setComposeTextStyle(density, style)
+      view.setComposeTextStyle(density, styleMerged)
+      view.text = text
     }
   )
 }
